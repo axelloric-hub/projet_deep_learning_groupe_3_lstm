@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>LSTM Météo — Prédiction Jena</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #080c14;
+      --surface:  #0d1220;
+      --card:     #111827;
+      --card2:    #151d2e;
+      --border:   #1e2d45;
+      --border2:  #2a3d5a;
+      --accent:   #38bdf8;
+      --accent2:  #f59e0b;
+      --green:    #34d399;
+      --red:      #f87171;
+      --purple:   #a78bfa;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --muted2:   #94a3b8;
+      --fh:       'Syne', sans-serif;
+      --fm:       'DM Mono', monospace;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--fm);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Animated background */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% 0%, rgba(56,189,248,0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(167,139,250,0.05) 0%, transparent 55%);
+      pointer-events: none;
+    }
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background-image:
+        linear-gradient(rgba(56,189,248,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56,189,248,0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2.5rem; height: 64px;
+      background: rgba(8,12,20,0.90);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+    .nav-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--accent), var(--purple));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem;
+    }
+    .nav-title {
+      font-family: var(--fh);
+      font-weight: 800;
+      font-size: 1rem;
+      letter-spacing: -0.03em;
+    }
+    .nav-title span { color: var(--accent); }
+    .nav-links { display: flex; gap: 0.25rem; }
+    .nav-links a {
+      font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--muted); text-decoration: none;
+      padding: 0.4rem 1rem; border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .nav-links a:hover, .nav-links a.active {
+      color: var(--accent); background: rgba(56,189,248,0.08);
+    }
+    .nav-right { display: flex; align-items: center; gap: 1rem; }
+    .live-badge {
+      display: flex; align-items: center; gap: 0.4rem;
+      font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--green);
+    }
+    .live-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      animation: blink 1.8s ease infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── LAYOUT ── */
+    .page { position: relative; z-index: 1; max-width: 1160px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+
+    /* ── HERO ── */
+    .hero {
+      display: grid; grid-template-columns: 1fr auto;
+      align-items: center; gap: 2rem;
+      margin-bottom: 2.5rem;
+      animation: fadeUp 0.5s ease both;
+    }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      font-size: 0.68rem; letter-spacing: 0.15em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 0.9rem;
+    }
+    .hero-eyebrow::before {
+      content: ''; width: 24px; height: 1px; background: var(--accent);
+    }
+    .hero h1 {
+      font-family: var(--fh);
+      font-size: clamp(1.9rem, 4vw, 3rem);
+      font-weight: 800; letter-spacing: -0.04em;
+      line-height: 1.1; margin-bottom: 0.9rem;
+    }
+    .hero h1 em { font-style: normal; color: var(--accent); }
+    .hero p { font-size: 0.85rem; color: var(--muted2); line-height: 1.8; max-width: 500px; }
+
+    .hero-stats {
+      display: flex; flex-direction: column; gap: 0.6rem;
+      padding: 1.4rem 1.8rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      min-width: 220px;
+    }
+    .hstat-label {
+      font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+    }
+    .hstat-val {
+      font-family: var(--fh); font-size: 1.5rem; font-weight: 800;
+      color: var(--accent); margin: 0.1rem 0;
+    }
+    .hstat-sub { font-size: 0.7rem; color: var(--muted); }
+    .hstat-divider { height: 1px; background: var(--border); margin: 0.3rem 0; }
+
+    /* ── PREDICT PANEL ── */
+    .predict-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 1.5rem; margin-bottom: 1.5rem;
+      animation: fadeUp 0.5s 0.1s ease both;
+    }
+    @media (max-width: 768px) { .predict-grid { grid-template-columns: 1fr; } .hero { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.8rem;
+      position: relative; overflow: hidden;
+    }
+    .card-accent-line {
+      position: absolute; top: 0; left: 1.5rem; right: 1.5rem; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.4;
+    }
+    .card-label {
+      font-size: 0.65rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 1.3rem;
+      display: flex; align-items: center; gap: 0.6rem;
+    }
+    .card-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* ── FORM ── */
+    .form-row { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; }
+    .form-row label {
+      font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--muted);
+    }
+    .form-row .hint { font-size: 0.65rem; color: var(--muted); opacity: 0.7; margin-top: 0.2rem; }
+
+    .inp-wrap { position: relative; }
+    .inp-unit {
+      position: absolute; right: 0.9rem; top: 50%; transform: translateY(-50%);
+      font-size: 0.7rem; color: var(--muted); pointer-events: none;
+    }
+    input[type="number"], select {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text);
+      font-family: var(--fm);
+      font-size: 0.85rem;
+      padding: 0.7rem 2.5rem 0.7rem 0.9rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      -moz-appearance: textfield;
+    }
+    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; }
+    input:focus, select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(56,189,248,0.1);
+    }
+    select { padding-right: 0.9rem; cursor: pointer; }
+    select option { background: var(--card); }
+
+    .btn {
+      display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+      width: 100%; padding: 0.9rem; margin-top: 0.5rem;
+      border: none; border-radius: 8px;
+      font-family: var(--fm); font-size: 0.82rem; letter-spacing: 0.05em;
+      cursor: pointer; transition: all 0.2s; font-weight: 500;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #0ea5e9);
+      color: #080c14;
+    }
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(56,189,248,0.3);
+    }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+    .btn-ghost {
+      background: transparent; color: var(--muted);
+      border: 1px solid var(--border); font-size: 0.75rem; margin-top: 0.4rem;
+    }
+    .btn-ghost:hover { border-color: var(--accent2); color: var(--accent2); }
+
+    /* ── SPINNER ── */
+    .spinner {
+      width: 15px; height: 15px;
+      border: 2px solid rgba(8,12,20,0.3);
+      border-top-color: #080c14;
+      border-radius: 50%; animation: spin 0.65s linear infinite; display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── RESULT BOX ── */
+    #result-empty {
+      height: 220px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 1rem;
+    }
+    .result-icon { font-size: 3rem; opacity: 0.12; }
+    .result-hint { font-size: 0.78rem; color: var(--muted); text-align: center; line-height: 1.6; }
+
+    #result-content { display: none; }
+
+    .temp-display {
+      display: flex; align-items: baseline; gap: 0.4rem;
+      margin-bottom: 0.5rem;
+    }
+    .temp-val {
+      font-family: var(--fh); font-size: 4rem; font-weight: 800;
+      letter-spacing: -0.05em; color: var(--accent);
+      line-height: 1;
+    }
+    .temp-unit { font-size: 1.8rem; color: var(--muted); font-family: var(--fh); }
+    .temp-label { font-size: 0.75rem; color: var(--muted2); margin-bottom: 1.5rem; }
+
+    /* Confidence bar */
+    .conf-row { margin-bottom: 1.2rem; }
+    .conf-header { display: flex; justify-content: space-between; margin-bottom: 0.4rem; }
+    .conf-key { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+    .conf-pct { font-size: 0.78rem; color: var(--accent2); }
+    .conf-track {
+      height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;
+    }
+    .conf-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 2px; transition: width 0.8s cubic-bezier(0.16,1,0.3,1);
+    }
+
+    /* Meta grid */
+    .meta-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 0.8rem; padding-top: 1.2rem;
+      border-top: 1px solid var(--border);
+    }
+    .meta-item { }
+    .meta-k { font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.25rem; }
+    .meta-v { font-size: 0.85rem; color: var(--text); }
+    .meta-v.good { color: var(--green); }
+    .meta-v.warn { color: var(--accent2); }
+
+    /* ── ERROR ── */
+    #error-box {
+      display: none; margin-top: 1rem;
+      background: rgba(248,113,113,0.07);
+      border: 1px solid rgba(248,113,113,0.25);
+      border-radius: 7px; padding: 0.9rem 1.1rem;
+      font-size: 0.78rem; color: var(--red);
+    }
+
+    /* ── WEATHER DESCRIPTION ── */
+    .weather-desc {
+      display: flex; align-items: center; gap: 0.8rem;
+      padding: 0.9rem 1.1rem; margin-top: 1rem;
+      background: rgba(56,189,248,0.05);
+      border: 1px solid rgba(56,189,248,0.15);
+      border-radius: 8px; font-size: 0.8rem; color: var(--muted2);
+    }
+    .weather-emoji { font-size: 1.6rem; }
+
+    /* ── HISTORY TABLE ── */
+    .history-section { animation: fadeUp 0.5s 0.2s ease both; }
+    .history-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+    .history-table th {
+      font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--muted); text-align: left; padding: 0.5rem 0.8rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .history-table td {
+      font-size: 0.78rem; padding: 0.65rem 0.8rem;
+      border-bottom: 1px solid rgba(30,45,69,0.5);
+    }
+    .history-table tr:last-child td { border-bottom: none; }
+    .history-table tr:hover td { background: rgba(56,189,248,0.03); }
+    .td-pred { color: var(--accent); }
+    .td-time { color: var(--muted); font-size: 0.7rem; }
+    .td-badge {
+      display: inline-block; font-size: 0.62rem; padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+    }
+    .td-badge.cold { background: rgba(56,189,248,0.12); color: var(--accent); }
+    .td-badge.mild { background: rgba(52,211,153,0.12); color: var(--green); }
+    .td-badge.warm { background: rgba(245,158,11,0.12); color: var(--accent2); }
+    .td-badge.hot  { background: rgba(248,113,113,0.12); color: var(--red); }
+
+    .empty-history {
+      text-align: center; padding: 2rem; font-size: 0.78rem; color: var(--muted);
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      position: relative; z-index: 1;
+      text-align: center; padding: 2rem;
+      font-size: 0.72rem; color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+
+    /* ── TOAST ── */
+    #toast {
+      position: fixed; bottom: 2rem; right: 2rem; z-index: 999;
+      background: var(--card2); border: 1px solid var(--border2);
+      border-radius: 9px; padding: 0.85rem 1.3rem;
+      font-size: 0.78rem; color: var(--text);
+      transform: translateY(130%); transition: transform 0.35s cubic-bezier(0.16,1,0.3,1);
+      display: flex; align-items: center; gap: 0.6rem;
+    }
+    #toast.show { transform: translateY(0); }
+
+    @keyframes fadeUp { from{opacity:0;transform:translateY(22px)} to{opacity:1;transform:translateY(0)} }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-brand">
+    <div class="nav-icon">🌡</div>
+    <div class="nav-title">LSTM<span>·</span>Météo</div>
+  </div>
+  <div class="nav-links">
+    <a href="/" class="active">Prédiction</a>
+    <a href="/dashboard">Dashboard</a>
+    <a href="/api/docs">API</a>
+  </div>
+  <div class="nav-right">
+    <div class="live-badge">
+      <div class="live-dot" id="live-dot"></div>
+      <span id="live-text">En ligne</span>
+    </div>
+  </div>
+</nav>
+
+<!-- PAGE -->
+<div class="page">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div>
+      <div class="hero-eyebrow">LSTM · Jena Climate Dataset · TensorFlow</div>
+      <h1>Prédiction<br/>Météo <em>T+1</em></h1>
+      <p>Saisissez les conditions actuelles. Le réseau LSTM prédit la température à l'heure suivante à partir des données du dataset Jena Climate.</p>
+    </div>
+    <div class="hero-stats" id="hero-stats">
+      <div>
+        <div class="hstat-label">Architecture</div>
+        <div class="hstat-val" style="font-size:1rem">LSTM×2 → Dense</div>
+        <div class="hstat-sub">128 → 64 → 32 → 1</div>
+      </div>
+      <div class="hstat-divider"></div>
+      <div>
+        <div class="hstat-label">Dataset</div>
+        <div class="hstat-val" style="font-size:1rem">Jena 2009–2016</div>
+        <div class="hstat-sub">~57 600 obs. horaires</div>
+      </div>
+      <div class="hstat-divider"></div>
+      <div>
+        <div class="hstat-label">Statut modèle</div>
+        <div class="hstat-val" id="model-status-val" style="font-size:1rem;color:var(--muted)">…</div>
+        <div class="hstat-sub" id="model-status-sub">Vérification…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PREDICT -->
+  <div class="predict-grid">
+
+    <!-- LEFT: Inputs -->
+    <div class="card">
+      <div class="card-accent-line"></div>
+      <div class="card-label">Conditions météo actuelles</div>
+
+      <div class="form-row">
+        <label>Température actuelle</label>
+        <div class="inp-wrap">
+          <input type="number" id="inp-temp" step="0.1" value="12.5" min="-30" max="50"/>
+          <span class="inp-unit">°C</span>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Pression atmosphérique</label>
+        <div class="inp-wrap">
+          <input type="number" id="inp-pres" step="0.1" value="1013.0" min="950" max="1060"/>
+          <span class="inp-unit">mbar</span>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Humidité relative</label>
+        <div class="inp-wrap">
+          <input type="number" id="inp-rh" step="0.5" value="75.0" min="0" max="100"/>
+          <span class="inp-unit">%</span>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Vitesse du vent</label>
+        <div class="inp-wrap">
+          <input type="number" id="inp-wv" step="0.1" value="3.5" min="0" max="40"/>
+          <span class="inp-unit">m/s</span>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Direction du vent</label>
+        <div class="inp-wrap">
+          <input type="number" id="inp-wd" step="1" value="180" min="0" max="360"/>
+          <span class="inp-unit">deg</span>
+        </div>
+        <div class="hint">0° = Nord, 90° = Est, 180° = Sud, 270° = Ouest</div>
+      </div>
+
+      <button class="btn btn-primary" id="predict-btn">
+        <span id="btn-label">Prédire T+1</span>
+        <div class="spinner" id="spinner"></div>
+      </button>
+
+      <button class="btn btn-ghost" id="random-btn">⚂ Valeurs aléatoires</button>
+
+      <div id="error-box"></div>
+    </div>
+
+    <!-- RIGHT: Result -->
+    <div class="card">
+      <div class="card-accent-line"></div>
+      <div class="card-label">Résultat de prédiction</div>
+
+      <div id="result-empty">
+        <div class="result-icon">🌡</div>
+        <div class="result-hint">
+          Renseignez les conditions météo<br/>et lancez la prédiction.
+        </div>
+      </div>
+
+      <div id="result-content">
+        <div class="temp-display">
+          <div class="temp-val" id="r-temp">—</div>
+          <div class="temp-unit">°C</div>
+        </div>
+        <div class="temp-label" id="r-label">Température prédite pour l'heure T+1</div>
+
+        <div class="conf-row">
+          <div class="conf-header">
+            <span class="conf-key">Confiance du modèle</span>
+            <span class="conf-pct" id="r-conf-pct">—%</span>
+          </div>
+          <div class="conf-track">
+            <div class="conf-fill" id="r-conf-bar"></div>
+          </div>
+        </div>
+
+        <div class="weather-desc" id="r-weather-desc">
+          <span class="weather-emoji" id="r-emoji">🌡</span>
+          <span id="r-desc-text">—</span>
+        </div>
+
+        <div class="meta-grid">
+          <div class="meta-item">
+            <div class="meta-k">Latence</div>
+            <div class="meta-v" id="r-latency">—</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-k">Δ Température</div>
+            <div class="meta-v" id="r-delta">—</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-k">Catégorie</div>
+            <div class="meta-v" id="r-cat">—</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-k">Fenêtre séquence</div>
+            <div class="meta-v">24h (LSTM)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /predict-grid -->
+
+  <!-- HISTORY -->
+  <div class="history-section card">
+    <div class="card-accent-line"></div>
+    <div class="card-label">Historique des prédictions</div>
+    <div id="history-body">
+      <div class="empty-history">Aucune prédiction effectuée.</div>
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<footer>
+  CNN &amp; LSTM — Deep Learning Project · Dataset: <a href="https://www.bgc-jena.mpg.de/" target="_blank">Jena Climate</a> · TensorFlow / Keras
+</footer>
+
+<div id="toast"></div>
+
+<script>
+  // ── Weather helpers ──────────────────────────────────────────────────
+  function weatherInfo(temp) {
+    if (temp < 0)  return { emoji: '🥶', desc: 'Temps glacial — risque de gel', cat: 'Glacial', cls: 'cold' };
+    if (temp < 10) return { emoji: '🌬', desc: 'Temps froid — vêtements chauds recommandés', cat: 'Froid', cls: 'cold' };
+    if (temp < 18) return { emoji: '🌤', desc: 'Temps frais et agréable', cat: 'Frais', cls: 'mild' };
+    if (temp < 25) return { emoji: '☀️', desc: 'Température douce et confortable', cat: 'Doux', cls: 'mild' };
+    if (temp < 32) return { emoji: '🌞', desc: 'Temps chaud — restez hydraté', cat: 'Chaud', cls: 'warm' };
+    return { emoji: '🔥', desc: 'Canicule — évitez l\'exposition prolongée', cat: 'Caniculaire', cls: 'hot' };
+  }
+
+  function confFromDelta(delta) {
+    // Confiance heuristique basée sur le delta
+    const c = Math.max(40, 100 - Math.abs(delta) * 8);
+    return Math.min(c, 97);
+  }
+
+  // ── History ──────────────────────────────────────────────────────────
+  let history = [];
+
+  function pushHistory(inp, pred, ms) {
+    const now = new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    history.unshift({ inp, pred, ms, time: now });
+    if (history.length > 8) history.pop();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const el = document.getElementById('history-body');
+    if (!history.length) {
+      el.innerHTML = '<div class="empty-history">Aucune prédiction effectuée.</div>';
+      return;
+    }
+    const w = weatherInfo;
+    el.innerHTML = `
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>Heure</th>
+            <th>T actuelle</th>
+            <th>T prédite</th>
+            <th>Δ</th>
+            <th>Catégorie</th>
+            <th>Latence</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${history.map(h => {
+            const info = w(h.pred);
+            const delta = (h.pred - h.inp.temp).toFixed(1);
+            const sign = delta >= 0 ? '+' : '';
+            return `
+              <tr>
+                <td class="td-time">${h.time}</td>
+                <td>${h.inp.temp.toFixed(1)} °C</td>
+                <td class="td-pred">${h.pred.toFixed(2)} °C</td>
+                <td style="color:${delta>=0?'var(--red)':'var(--accent)'}">${sign}${delta} °C</td>
+                <td><span class="td-badge ${info.cls}">${info.cat}</span></td>
+                <td class="td-time">${h.ms} ms</td>
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  // ── Predict ───────────────────────────────────────────────────────────
+  document.getElementById('predict-btn').addEventListener('click', async () => {
+    const inp = {
+      temp: parseFloat(document.getElementById('inp-temp').value),
+      pres: parseFloat(document.getElementById('inp-pres').value),
+      rh:   parseFloat(document.getElementById('inp-rh').value),
+      wv:   parseFloat(document.getElementById('inp-wv').value),
+      wd:   parseFloat(document.getElementById('inp-wd').value),
+    };
+
+    if (Object.values(inp).some(isNaN)) {
+      document.getElementById('error-box').textContent = '⚠ Veuillez remplir tous les champs.';
+      document.getElementById('error-box').style.display = 'block';
+      return;
+    }
+
+    document.getElementById('error-box').style.display = 'none';
+    document.getElementById('btn-label').textContent = 'Inférence…';
+    document.getElementById('spinner').style.display = 'block';
+    document.getElementById('predict-btn').disabled = true;
+
+    const t0 = Date.now();
+    try {
+      const res  = await fetch('/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(inp),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur serveur');
+
+      const ms   = Date.now() - t0;
+      showResult(data, inp, ms);
+      pushHistory(inp, data.predicted_temperature_C, ms);
+      toast(`✓ T+1 = ${data.predicted_temperature_C.toFixed(2)} °C`);
+    } catch(e) {
+      document.getElementById('error-box').textContent = '⚠ ' + e.message;
+      document.getElementById('error-box').style.display = 'block';
+    } finally {
+      document.getElementById('btn-label').textContent = 'Prédire T+1';
+      document.getElementById('spinner').style.display = 'none';
+      document.getElementById('predict-btn').disabled = false;
+    }
+  });
+
+  function showResult(data, inp, ms) {
+    document.getElementById('result-empty').style.display = 'none';
+    document.getElementById('result-content').style.display = 'block';
+
+    const pred  = data.predicted_temperature_C;
+    const delta = pred - inp.temp;
+    const info  = weatherInfo(pred);
+    const conf  = confFromDelta(delta);
+
+    document.getElementById('r-temp').textContent    = pred.toFixed(2);
+    document.getElementById('r-label').textContent   = `Température prédite pour l'heure T+1 (depuis ${inp.temp.toFixed(1)} °C)`;
+    document.getElementById('r-conf-pct').textContent = conf.toFixed(0) + '%';
+    document.getElementById('r-emoji').textContent   = info.emoji;
+    document.getElementById('r-desc-text').textContent = info.desc;
+    document.getElementById('r-latency').textContent = ms + ' ms';
+    document.getElementById('r-cat').textContent     = info.cat;
+
+    const sign = delta >= 0 ? '+' : '';
+    const deltaEl = document.getElementById('r-delta');
+    deltaEl.textContent = `${sign}${delta.toFixed(2)} °C`;
+    deltaEl.className = 'meta-v ' + (delta > 0 ? 'warn' : delta < 0 ? 'good' : '');
+
+    requestAnimationFrame(() => {
+      document.getElementById('r-conf-bar').style.width = conf + '%';
+    });
+  }
+
+  // ── Random values ─────────────────────────────────────────────────────
+  document.getElementById('random-btn').addEventListener('click', () => {
+    document.getElementById('inp-temp').value = (Math.random()*50 - 15).toFixed(1);
+    document.getElementById('inp-pres').value = (990 + Math.random()*60).toFixed(1);
+    document.getElementById('inp-rh').value   = (30 + Math.random()*65).toFixed(0);
+    document.getElementById('inp-wv').value   = (Math.random()*15).toFixed(1);
+    document.getElementById('inp-wd').value   = Math.floor(Math.random()*360);
+    toast('Valeurs aléatoires chargées');
+  });
+
+  // ── Health check ──────────────────────────────────────────────────────
+  fetch('/health').then(r=>r.json()).then(d => {
+    const el = document.getElementById('model-status-val');
+    const sub = document.getElementById('model-status-sub');
+    const dot = document.getElementById('live-dot');
+    if (d.status === 'ok') {
+      el.textContent = '● Online'; el.style.color = 'var(--green)';
+      sub.textContent = 'Modèle chargé';
+    } else {
+      el.textContent = '● Offline'; el.style.color = 'var(--red)';
+      sub.textContent = 'Modèle indisponible';
+      dot.style.background = 'var(--red)'; dot.style.boxShadow = '0 0 6px var(--red)';
+      document.getElementById('live-text').style.color = 'var(--red)';
+      document.getElementById('live-text').textContent = 'Hors ligne';
+    }
+  }).catch(()=>{});
+</script>
+</body>
+</html>
